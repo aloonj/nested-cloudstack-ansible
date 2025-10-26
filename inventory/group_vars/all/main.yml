@@ -25,10 +25,9 @@ hypervisor_type: "kvm_libvirt"
 # ============================================================================
 # SSH Keys
 # ============================================================================
-# Add your SSH public key here to access the nested VMs
+# SECURITY: SSH public key should be set in inventory/group_vars/all/secrets.yml
 # Generate one with: ssh-keygen -t ed25519 -C "your_email@example.com"
-# Then paste the contents of ~/.ssh/id_ed25519.pub below
-admin_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL5i4GPz48T2eKthkdqpODIwYWjRg/j9Pxf4YhzwRfc5 aloonj@github.com"
+# This variable is intentionally not defined here - set it in secrets.yml
 
 # Root password for nested VMs (hashed)
 # SECURITY: This MUST be set in inventory/group_vars/all/secrets.yml

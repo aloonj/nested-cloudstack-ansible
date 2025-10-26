@@ -16,17 +16,14 @@ Ansible playbook for deploying Apache CloudStack on nested VMs. Useful for testi
 ## TL;DR
 
 ```bash
-# 1. Configure secrets
+# 1. Configure secrets (passwords, SSH key)
 cp inventory/group_vars/all/secrets.yml.example inventory/group_vars/all/secrets.yml
-vim inventory/group_vars/all/secrets.yml  # Set passwords
+vim inventory/group_vars/all/secrets.yml  # Set passwords and add your SSH public key
 
-# 2. Add your SSH key to main.yml
-vim inventory/group_vars/all/main.yml  # Update admin_ssh_public_key
-
-# 3. Deploy infrastructure (30-60 minutes)
+# 2. Deploy infrastructure (30-60 minutes)
 ansible-playbook -i inventory/hosts.yml deploy-cloudstack.yml --ask-become-pass
 
-# 4. Generate API keys in UI at http://192.168.100.10:8080/client (admin/password)
+# 3. Generate API keys in UI at http://192.168.100.10:8080/client (admin/password)
 #    Add them to secrets.yml, then configure the zone
 ansible-playbook -i inventory/hosts.yml configure-zone.yml
 ```
@@ -105,14 +102,13 @@ ansible-galaxy collection install community.libvirt
 1. **Create secrets file:**
    ```bash
    cp inventory/group_vars/all/secrets.yml.example inventory/group_vars/all/secrets.yml
-   vim inventory/group_vars/all/secrets.yml  # Set passwords (required)
+   vim inventory/group_vars/all/secrets.yml  # Set passwords and SSH public key (required)
    ```
 
-2. **Edit `inventory/group_vars/all/main.yml`:**
-   - Add your SSH public key (`admin_ssh_public_key`)
-   - (Optional) Set hypervisor platform (`hypervisor_type` - currently only `kvm_libvirt` supported)
-   - (Optional) Change VM guest OS (Rocky 9 or Ubuntu 22.04)
-   - (Optional) Adjust network settings, zone config, etc.
+2. **(Optional) Edit `inventory/group_vars/all/main.yml`:**
+   - Change hypervisor platform (`hypervisor_type` - currently only `kvm_libvirt` supported)
+   - Change VM guest OS (Rocky 9 or Ubuntu 22.04)
+   - Adjust network settings, zone config, etc.
 
 3. **Deploy infrastructure:**
 ```bash
