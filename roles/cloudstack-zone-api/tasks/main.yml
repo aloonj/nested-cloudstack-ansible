@@ -186,11 +186,7 @@
     - secondary_storage_result.rc != 0
     - "'already exists' not in secondary_storage_result.stderr"
 
-- name: Enable the zone
-  shell: cloudmonkey update zone id={{ zone_id }} allocationstate=Enabled
-  register: enable_zone_result
-
-- name: Create guest network for Basic zone
+- name: Create guest network for Basic zone (BEFORE enabling zone)
   shell: |
     cloudmonkey create network \
       name="{{ guest_network_name }}" \
@@ -227,6 +223,10 @@
     - guest_iprange_result.rc != 0
     - "'already exists' not in guest_iprange_result.stderr"
     - "'overlaps' not in guest_iprange_result.stderr"
+
+- name: Enable the zone (AFTER guest network is configured)
+  shell: cloudmonkey update zone id={{ zone_id }} allocationstate=Enabled
+  register: enable_zone_result
 
 - name: Display completion message
   debug:
