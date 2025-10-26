@@ -1,0 +1,8 @@
+---
+# Debian/Ubuntu specific tasks for cloudmonkey installation
+
+- name: Install cloudmonkey via snap (Ubuntu/Debian)
+  community.general.snap:
+    name: cloudmonkey
+    classic: yes
+    state: present

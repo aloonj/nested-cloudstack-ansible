@@ -1,0 +1,100 @@
+---
+# Setup NFS server for CloudStack storage
+
+- name: Install NFS server packages (Debian/Ubuntu)
+  apt:
+    name:
+      - nfs-kernel-server
+      - nfs-common
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install NFS server packages (RedHat/Rocky)
+  dnf:
+    name:
+      - nfs-utils
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Create NFS export directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - "{{ nfs_primary_path }}"
+    - "{{ nfs_secondary_path }}"
+
+- name: Configure NFS exports for CloudStack
+  blockinfile:
+    path: /etc/exports
+    block: |
+      {{ nfs_primary_path }} 192.168.100.0/24(rw,sync,no_subtree_check,no_root_squash)
+      {{ nfs_secondary_path }} 192.168.100.0/24(rw,sync,no_subtree_check,no_root_squash)
+    marker: "# {mark} ANSIBLE MANAGED CLOUDSTACK NFS EXPORTS"
+    create: yes
+  notify:
+    - export nfs shares
+    - restart nfs server
+
+- name: Start and enable NFS server (Debian/Ubuntu)
+  systemd:
+    name: nfs-kernel-server
+    state: started
+    enabled: yes
+  when: ansible_os_family == "Debian"
+
+- name: Start and enable NFS server (RedHat/Rocky)
+  systemd:
+    name: nfs-server
+    state: started
+    enabled: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Start and enable rpcbind (RedHat/Rocky)
+  systemd:
+    name: rpcbind
+    state: started
+    enabled: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Configure firewall for NFS (ufw)
+  ufw:
+    rule: allow
+    from_ip: 192.168.100.0/24
+    proto: "{{ item }}"
+  loop:
+    - tcp
+    - udp
+  when: ansible_os_family == "Debian"
+  ignore_errors: yes
+
+- name: Check if firewalld is installed (RedHat/Rocky)
+  command: systemctl list-unit-files firewalld.service
+  register: firewalld_check
+  when: ansible_os_family == "RedHat"
+  changed_when: false
+  failed_when: false
+
+- name: Disable firewalld for CloudStack (RedHat/Rocky)
+  systemd:
+    name: firewalld
+    state: stopped
+    enabled: no
+  when:
+    - ansible_os_family == "RedHat"
+    - firewalld_check.rc == 0
+
+- name: Flush handlers to ensure NFS is exported
+  meta: flush_handlers
+
+- name: Verify NFS exports are active
+  command: exportfs -v
+  register: exportfs_output
+  changed_when: false
+
+- name: Display active NFS exports
+  debug:
+    var: exportfs_output.stdout_lines

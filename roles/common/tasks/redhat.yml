@@ -1,0 +1,57 @@
+---
+# RedHat/Rocky specific tasks for common role
+
+- name: Clean DNF cache first
+  command: dnf clean all
+  changed_when: false
+
+- name: Enable EPEL repository
+  dnf:
+    name: epel-release
+    state: present
+
+- name: Import EPEL GPG key
+  rpm_key:
+    state: present
+    key: /etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-9
+
+- name: Install common packages
+  dnf:
+    name:
+      - chrony
+      - vim
+      - htop
+      - net-tools
+      - curl
+      - wget
+      - ca-certificates
+      - gnupg2
+      - iproute
+    state: present
+
+- name: Configure Chrony
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+    backup: yes
+  notify: restart chronyd
+
+- name: Start and enable Chrony service
+  systemd:
+    name: chronyd
+    state: started
+    enabled: yes
+
+- name: Check if SELinux is enabled
+  command: getenforce
+  register: selinux_check
+  changed_when: false
+  failed_when: false
+
+- name: Set SELinux to permissive
+  selinux:
+    policy: targeted
+    state: permissive
+  when:
+    - selinux_check.rc == 0
+    - selinux_check.stdout != "Disabled"

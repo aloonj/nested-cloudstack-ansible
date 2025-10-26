@@ -1,0 +1,71 @@
+---
+# RedHat/Rocky specific tasks for cloudstack-agent
+
+- name: Install KVM and related packages
+  dnf:
+    name:
+      - qemu-kvm
+      - libvirt
+      - libvirt-client
+      - iproute
+      - NetworkManager
+      - uuidd
+    state: present
+
+- name: Add CloudStack YUM repository
+  yum_repository:
+    name: cloudstack
+    description: "Apache CloudStack {{ cloudstack_version }} Repository"
+    baseurl: "http://download.cloudstack.org/centos/$releasever/{{ cloudstack_version }}/"
+    gpgcheck: no
+    enabled: yes
+
+- name: Install CloudStack KVM agent
+  dnf:
+    name:
+      - cloudstack-agent
+    state: present
+
+- name: Disable libvirt socket activation
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+    masked: yes
+  loop:
+    - libvirtd.socket
+    - libvirtd-ro.socket
+    - libvirtd-admin.socket
+    - libvirtd-tcp.socket
+    - libvirtd-tls.socket
+  ignore_errors: yes
+
+- name: Configure libvirt daemon options
+  lineinfile:
+    path: /etc/sysconfig/libvirtd
+    regexp: '^LIBVIRTD_ARGS='
+    line: 'LIBVIRTD_ARGS="--listen"'
+    create: yes
+  notify: restart libvirtd
+
+- name: Create CloudStack bridge with nmcli
+  command: nmcli con add type bridge ifname cloudbr0 con-name cloudbr0
+  register: bridge_create
+  failed_when:
+    - bridge_create.rc != 0
+    - "'already exists' not in bridge_create.stderr"
+
+- name: Configure cloudbr0 to use DHCP
+  command: nmcli con modify cloudbr0 ipv4.method auto
+  ignore_errors: yes
+
+- name: Attach enp1s0 to cloudbr0 bridge
+  command: nmcli con add type bridge-slave ifname enp1s0 master cloudbr0
+  register: bridge_slave
+  failed_when:
+    - bridge_slave.rc != 0
+    - "'already exists' not in bridge_slave.stderr"
+
+- name: Bring up cloudbr0 bridge
+  command: nmcli con up cloudbr0
+  ignore_errors: yes

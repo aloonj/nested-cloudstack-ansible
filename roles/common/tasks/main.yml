@@ -1,0 +1,20 @@
+---
+# Common configuration for all CloudStack VMs
+
+- name: Set hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Update /etc/hosts with all CloudStack hosts
+  blockinfile:
+    path: /etc/hosts
+    block: |
+      192.168.100.10  cs-mgmt cs-mgmt.local
+      192.168.100.11  cs-nfs cs-nfs.local
+      192.168.100.20  cs-kvm01 cs-kvm01.local
+      192.168.100.21  cs-kvm02 cs-kvm02.local
+    marker: "# {mark} ANSIBLE MANAGED CLOUDSTACK HOSTS"
+
+# OS-specific package installation, time sync, and security configuration
+- name: Include OS-specific tasks
+  include_tasks: "{{ ansible_os_family | lower }}.yml"

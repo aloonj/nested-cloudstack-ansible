@@ -1,0 +1,12 @@
+# CloudStack Agent Configuration
+# Management server connection
+host={{ groups['cloudstack_mgmt'][0] }}
+port=8250
+zone=zone1
+pod=pod1
+cluster=cluster1
+guid=
+workers=5
+# Resource limits
+resource.limit.requests=5
+resource.limit.time=300000

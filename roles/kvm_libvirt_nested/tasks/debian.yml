@@ -1,0 +1,18 @@
+---
+# Debian/Ubuntu specific tasks for libvirt-nested
+
+- name: Ensure required packages are installed (Debian/Ubuntu)
+  become: yes
+  apt:
+    name:
+      - libvirt-daemon-system
+      - libvirt-clients
+      - virtinst
+      - qemu-kvm
+      - qemu-utils
+      - genisoimage
+      - python3-libvirt
+      - python3-lxml
+      - cloud-image-utils
+    state: present
+    update_cache: yes

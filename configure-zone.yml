@@ -1,0 +1,67 @@
+---
+# CloudStack Zone Configuration via API
+#
+# Prerequisites:
+# 1. CloudStack deployment is complete (deploy-cloudstack.yml has been run)
+# 2. You have logged into CloudStack UI (http://192.168.100.10:8080/client)
+# 3. You have generated API keys (Accounts -> admin -> View Users -> admin -> Generate Keys)
+# 4. You have updated inventory/group_vars/all.yml with your API keys:
+#    - cloudstack_api_key
+#    - cloudstack_secret_key
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml configure-zone.yml
+
+- name: Configure CloudStack Zone via API
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  become: no
+
+  vars:
+    # CloudStack Management Server
+    cloudstack_mgmt_host: "{{ groups['cloudstack_mgmt'][0] }}"
+
+    # KVM Hosts - dynamically built from inventory
+    # Uses kvm_host_root_password from secrets.yml
+    kvm_hosts: "{{ groups['kvm_compute'] | map('extract', hostvars) |
+                   map(attribute='ansible_host') |
+                   map('regex_replace', '^(.*)$', '{\"host\": \"\\1\", \"username\": \"root\", \"password\": \"' + kvm_host_root_password + '\"}') |
+                   map('from_json') | list }}"
+
+    # Storage Configuration
+    nfs_server: "{{ groups['nfs_storage'][0] }}"
+
+  pre_tasks:
+    - name: Verify API keys are configured
+      fail:
+        msg: |
+          API keys are not configured!
+
+          Please generate API keys in CloudStack UI and add them to inventory/group_vars/all.yml:
+
+          1. Login to CloudStack UI: http://{{ ansible_host }}:8080/client
+             (default credentials: admin / password)
+
+          2. Generate API keys:
+             - Go to Accounts -> admin
+             - Click 'View Users'
+             - Click on admin user
+             - Click 'Generate Keys'
+
+          3. Edit inventory/group_vars/all.yml and update:
+             cloudstack_api_key: "YOUR_API_KEY_HERE"
+             cloudstack_secret_key: "YOUR_SECRET_KEY_HERE"
+
+          Note: SSH key authentication is already configured between the
+          management server and KVM hosts, so no password is needed.
+
+          Then re-run this playbook.
+      when: >
+        cloudstack_api_key is not defined or
+        cloudstack_secret_key is not defined or
+        cloudstack_api_key == "" or
+        cloudstack_secret_key == ""
+
+  roles:
+    - cloudstack-zone-api

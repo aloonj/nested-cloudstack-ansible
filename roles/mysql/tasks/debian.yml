@@ -1,0 +1,30 @@
+---
+# Debian/Ubuntu specific tasks for mysql
+
+- name: Install MariaDB server
+  apt:
+    name:
+      - mariadb-server
+      - mariadb-client
+      - python3-pymysql
+    state: present
+
+- name: Configure MariaDB for CloudStack
+  blockinfile:
+    path: /etc/mysql/mariadb.conf.d/50-server.cnf
+    insertafter: '^\[mysqld\]'
+    block: |
+      # CloudStack specific settings
+      server-id=1
+      innodb_rollback_on_timeout=1
+      innodb_lock_wait_timeout=600
+      max_connections=350
+      log-bin=mysql-bin
+      binlog-format='ROW'
+      bind-address=0.0.0.0
+    marker: "# {mark} ANSIBLE MANAGED CLOUDSTACK MYSQL CONFIG"
+  notify: restart mariadb
+
+- name: Set MySQL socket path fact
+  set_fact:
+    mysql_socket: "/var/run/mysqld/mysqld.sock"

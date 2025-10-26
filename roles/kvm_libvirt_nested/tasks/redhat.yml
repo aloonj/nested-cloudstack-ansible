@@ -1,0 +1,17 @@
+---
+# RedHat/Rocky specific tasks for libvirt-nested
+
+- name: Ensure required packages are installed (RedHat/Rocky)
+  become: yes
+  dnf:
+    name:
+      - libvirt
+      - libvirt-client
+      - virt-install
+      - qemu-kvm
+      - qemu-img
+      - genisoimage
+      - python3-libvirt
+      - python3-lxml
+      - cloud-utils
+    state: present

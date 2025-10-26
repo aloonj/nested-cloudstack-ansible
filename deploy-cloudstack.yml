@@ -1,0 +1,103 @@
+---
+# CloudStack Multi-Host Deployment Playbook
+# Deploys nested VMs and configures CloudStack infrastructure
+
+- name: Phase 1 - Create nested VMs on physical host
+  hosts: kvm_host
+  gather_facts: yes
+  become: no
+  tags: ['phase1', 'vms']
+  tasks:
+    - name: Include hypervisor-specific role for VM creation
+      include_role:
+        name: "{{ hypervisor_type }}_nested"
+
+- name: Phase 2 - Configure common settings on all CloudStack VMs
+  hosts: cloudstack_infra
+  gather_facts: yes
+  become: yes
+  tags: ['phase2', 'common']
+  roles:
+    - common
+
+- name: Phase 3 - Setup NFS storage server
+  hosts: nfs_storage
+  gather_facts: yes
+  become: yes
+  tags: ['phase3', 'nfs']
+  roles:
+    - nfs-server
+
+- name: Phase 4 - Setup MySQL/MariaDB on management server
+  hosts: cloudstack_mgmt
+  gather_facts: yes
+  become: yes
+  tags: ['phase4', 'mysql']
+  roles:
+    - mysql
+
+- name: Phase 5 - Install CloudStack Management Server
+  hosts: cloudstack_mgmt
+  gather_facts: yes
+  become: yes
+  tags: ['phase5', 'management']
+  roles:
+    - cloudstack-management
+
+- name: Phase 6 - Mount NFS storage on KVM compute hosts
+  hosts: kvm_compute
+  gather_facts: yes
+  become: yes
+  tags: ['phase6', 'nfs-client']
+  roles:
+    - nfs-client
+
+- name: Phase 7 - Install CloudStack KVM Agent on compute hosts
+  hosts: kvm_compute
+  gather_facts: yes
+  become: yes
+  tags: ['phase7', 'agent']
+  roles:
+    - cloudstack-agent
+
+- name: Phase 8 - Deployment Complete - Next Steps
+  hosts: cloudstack_mgmt
+  gather_facts: yes
+  tags: ['phase8', 'complete']
+  tasks:
+    - name: Display next steps for zone configuration
+      debug:
+        msg: |
+          ========================================
+          CloudStack Infrastructure Deployment Complete!
+          ========================================
+
+          Next steps to configure your CloudStack zone:
+
+          1. Access CloudStack UI:
+             URL: http://{{ ansible_host }}:8080/client
+             Username: admin
+             Password: password
+
+          2. Generate API keys:
+             - Navigate to: Accounts → admin → View Users
+             - Click on the admin user
+             - Click "Generate Keys"
+             - Copy the API Key and Secret Key
+
+          3. Update configuration:
+             Edit: inventory/group_vars/all.yml
+             Add your API keys:
+               cloudstack_api_key: "YOUR_API_KEY_HERE"
+               cloudstack_secret_key: "YOUR_SECRET_KEY_HERE"
+
+          4. Run zone configuration:
+             ansible-playbook -i inventory/hosts.yml configure-zone.yml
+
+          This will automatically:
+          - Create zone, pod, and cluster
+          - Add KVM hosts (SSH keys already configured)
+          - Configure primary and secondary storage
+          - Enable the zone and download system VM templates
+
+          ========================================

@@ -1,0 +1,72 @@
+---
+# Mount NFS storage on KVM compute hosts
+
+- name: Install NFS client packages (Debian/Ubuntu)
+  apt:
+    name:
+      - nfs-common
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install NFS client packages (RedHat/Rocky)
+  dnf:
+    name:
+      - nfs-utils
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Start and enable rpcbind (RedHat/Rocky)
+  systemd:
+    name: rpcbind
+    state: started
+    enabled: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Create NFS mount points
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /mnt/primary
+    - /mnt/secondary
+
+- name: Wait for NFS server to be ready
+  wait_for:
+    host: "{{ groups['nfs_storage'][0] }}"
+    port: 2049
+    timeout: 60
+    delay: 5
+
+- name: Verify NFS exports are accessible
+  command: showmount -e {{ groups['nfs_storage'][0] }}
+  register: showmount_output
+  changed_when: false
+  retries: 5
+  delay: 3
+  until: showmount_output.rc == 0
+
+- name: Mount NFS primary storage
+  mount:
+    path: /mnt/primary
+    src: "{{ groups['nfs_storage'][0] }}:{{ nfs_primary_path }}"
+    fstype: nfs
+    opts: defaults,_netdev
+    state: mounted
+
+- name: Mount NFS secondary storage
+  mount:
+    path: /mnt/secondary
+    src: "{{ groups['nfs_storage'][0] }}:{{ nfs_secondary_path }}"
+    fstype: nfs
+    opts: defaults,_netdev
+    state: mounted
+
+- name: Verify NFS mounts
+  command: df -h
+  register: df_output
+  changed_when: false
+
+- name: Display mount status
+  debug:
+    var: df_output.stdout_lines

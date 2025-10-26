@@ -1,0 +1,73 @@
+---
+# Debian/Ubuntu specific tasks for cloudstack-agent
+
+- name: Install KVM and related packages
+  apt:
+    name:
+      - qemu-kvm
+      - libvirt-daemon-system
+      - libvirt-clients
+      - bridge-utils
+      - vlan
+      - uuid-runtime
+    state: present
+
+- name: Add CloudStack APT repository key
+  apt_key:
+    url: https://download.cloudstack.org/release.asc
+    state: present
+
+- name: Add CloudStack APT repository
+  apt_repository:
+    repo: "deb http://download.cloudstack.org/ubuntu jammy {{ cloudstack_version }}"
+    state: present
+    filename: cloudstack
+
+- name: Update package cache
+  apt:
+    update_cache: yes
+
+- name: Install CloudStack KVM agent
+  apt:
+    name:
+      - cloudstack-agent
+    state: present
+
+- name: Configure libvirt daemon options
+  lineinfile:
+    path: /etc/default/libvirtd
+    regexp: '^libvirtd_opts='
+    line: 'libvirtd_opts="-l"'
+    create: yes
+  notify: restart libvirtd
+
+- name: Create directory for netplan config
+  file:
+    path: /etc/netplan
+    state: directory
+    mode: '0755'
+
+- name: Create CloudStack bridge interface with netplan
+  copy:
+    content: |
+      network:
+        version: 2
+        renderer: networkd
+        ethernets:
+          enp1s0:
+            dhcp4: false
+        bridges:
+          cloudbr0:
+            interfaces: [enp1s0]
+            dhcp4: true
+            parameters:
+              stp: false
+              forward-delay: 0
+    dest: /etc/netplan/99-cloudbr0.yaml
+    mode: '0644'
+  register: bridge_config_ubuntu
+
+- name: Apply netplan configuration
+  command: netplan apply
+  when: bridge_config_ubuntu.changed
+  ignore_errors: yes

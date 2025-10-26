@@ -1,0 +1,26 @@
+---
+# Debian/Ubuntu specific tasks for cloudstack-management
+
+- name: Add CloudStack APT repository key
+  apt_key:
+    url: https://download.cloudstack.org/release.asc
+    state: present
+
+- name: Add CloudStack APT repository
+  apt_repository:
+    repo: "deb http://download.cloudstack.org/ubuntu jammy {{ cloudstack_version }}"
+    state: present
+    filename: cloudstack
+
+- name: Update package cache
+  apt:
+    update_cache: yes
+
+- name: Install CloudStack management server
+  apt:
+    name:
+      - cloudstack-management
+      - cloudstack-common
+      - libvirt-clients
+      - python3-libvirt
+    state: present

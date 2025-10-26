@@ -1,0 +1,64 @@
+---
+# Install and configure CloudStack Management Server
+
+# Add repository and install CloudStack packages (OS-specific)
+- name: Include OS-specific tasks
+  include_tasks: "{{ ansible_os_family | lower }}.yml"
+
+- name: Check if CloudStack database schema exists
+  shell: mysql -u root -p'{{ mysql_root_password }}' -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='cloud';" 2>/dev/null | tail -1
+  register: db_table_count
+  changed_when: false
+  failed_when: false
+
+- name: Setup CloudStack database
+  command: cloudstack-setup-databases 'cloud:{{ mysql_cloud_password }}@localhost' --deploy-as='root:{{ mysql_root_password }}'
+  when: db_table_count.stdout | int == 0
+  register: db_setup
+
+- name: Fix database passwords in db.properties (cloudstack-setup-databases bug)
+  lineinfile:
+    path: /etc/cloudstack/management/db.properties
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backrefs: no
+  loop:
+    - { regexp: '^db\.cloud\.password=', line: 'db.cloud.password={{ mysql_cloud_password }}' }
+    - { regexp: '^db\.usage\.password=', line: 'db.usage.password={{ mysql_cloud_password }}' }
+    - { regexp: '^db\.simulator\.password=', line: 'db.simulator.password={{ mysql_cloud_password }}' }
+
+- name: Create sudoers entry for cloud user (fixes Ubuntu packaging bug)
+  copy:
+    content: "cloud ALL=(ALL) NOPASSWD:ALL\n"
+    dest: /etc/sudoers.d/cloudstack-management
+    mode: '0440'
+    validate: 'visudo -cf %s'
+
+- name: Setup CloudStack management server
+  command: cloudstack-setup-management
+  when: db_setup is changed
+  register: mgmt_setup
+
+- name: Wait for CloudStack management server to start
+  wait_for:
+    port: 8080
+    host: localhost
+    delay: 10
+    timeout: 300
+  when: mgmt_setup is changed
+
+- name: Create systemd override directory for CloudStack management
+  file:
+    path: /etc/systemd/system/cloudstack-management.service.d
+    state: directory
+
+- name: Ensure CloudStack management service is started and enabled
+  systemd:
+    name: cloudstack-management
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Display management server URL
+  debug:
+    msg: "CloudStack Management Server UI available at: http://{{ ansible_host }}:8080/client (default user: admin, password: password)"

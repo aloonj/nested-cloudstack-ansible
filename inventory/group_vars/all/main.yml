@@ -1,0 +1,144 @@
+---
+# ============================================================================
+# CloudStack Nested Virtualization - Configuration Variables
+# ============================================================================
+# This file contains non-sensitive configuration variables.
+#
+# SECURITY NOTICE:
+# Sensitive values (passwords, API keys) should be set in:
+#   inventory/group_vars/all/secrets.yml (gitignored)
+#
+# To create secrets.yml:
+#   cp inventory/group_vars/all/secrets.yml.example inventory/group_vars/all/secrets.yml
+#   vim inventory/group_vars/all/secrets.yml  # Add your actual values
+# ============================================================================
+
+# ============================================================================
+# Hypervisor Configuration
+# ============================================================================
+# Choose the hypervisor platform for creating nested VMs
+# Currently supported:
+#   - kvm_libvirt: KVM with libvirt on Linux (default)
+# Future support planned for: proxmox, vmware, hyperv
+hypervisor_type: "kvm_libvirt"
+
+# ============================================================================
+# SSH Keys
+# ============================================================================
+# Add your SSH public key here to access the nested VMs
+# Generate one with: ssh-keygen -t ed25519 -C "your_email@example.com"
+# Then paste the contents of ~/.ssh/id_ed25519.pub below
+admin_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL5i4GPz48T2eKthkdqpODIwYWjRg/j9Pxf4YhzwRfc5 aloonj@github.com"
+
+# Root password for nested VMs (hashed)
+# SECURITY: This MUST be set in inventory/group_vars/all/secrets.yml
+# Generate a new hash with: openssl passwd -6 <password>
+# This variable is intentionally not defined here - set it in secrets.yml
+
+# ============================================================================
+# CloudStack Version
+# ============================================================================
+cloudstack_version: "4.21"
+
+# ============================================================================
+# VM Guest OS Configuration
+# ============================================================================
+# Choose between Rocky Linux 9 (default) or Ubuntu 22.04
+vm_os: "rocky9"
+vm_base_image_url: "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
+vm_base_image_name: "rocky-9-cloudimg.qcow2"
+
+# For Ubuntu 22.04, uncomment these instead:
+# vm_os: "ubuntu22"
+# vm_base_image_url: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+# vm_base_image_name: "ubuntu-22.04-cloudimg.qcow2"
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+# All VMs (infrastructure, system VMs, and guest VMs) share the same network
+management_network: "192.168.100.0/24"
+management_gateway: "192.168.100.1"
+
+# IP allocation:
+# - 192.168.100.1         : Gateway (csbr0 bridge on physical host)
+# - 192.168.100.10-24     : Infrastructure VMs (mgmt, NFS, KVM hosts)
+# - 192.168.100.25-99     : Pod IPs (System VMs: SSVM, CPVM, routers)
+# - 192.168.100.100-254   : Guest VMs
+
+# ============================================================================
+# Database Configuration
+# ============================================================================
+# SECURITY: Passwords MUST be set in inventory/group_vars/all/secrets.yml
+# These variables are intentionally not defined here - set them in secrets.yml
+mysql_host: "{{ groups['cloudstack_mgmt'][0] }}"
+
+# ============================================================================
+# NFS Storage Configuration
+# ============================================================================
+nfs_primary_path: "/export/primary"
+nfs_secondary_path: "/export/secondary"
+
+# ============================================================================
+# CloudStack API Configuration (for configure-zone.yml playbook)
+# ============================================================================
+# SECURITY: API keys MUST be set in inventory/group_vars/all/secrets.yml
+#
+# LEAVE EMPTY until after initial deployment!
+# After running deploy-cloudstack.yml:
+# 1. Login to CloudStack UI: http://192.168.100.10:8080/client
+#    (default credentials: admin / password)
+# 2. Generate API keys:
+#    - Navigate to: Accounts -> admin -> View Users -> admin -> Generate Keys
+# 3. Add the API Key and Secret Key to inventory/group_vars/all/secrets.yml
+# 4. Run configure-zone.yml
+#
+# Note: SSH key authentication is automatically configured during deployment.
+# These variables are intentionally not defined here - set them in secrets.yml
+
+# ============================================================================
+# CloudStack Zone Configuration (for configure-zone.yml playbook)
+# ============================================================================
+# Zone settings - Basic networking uses a single flat network
+zone_name: "zone1"
+zone_dns1: "8.8.8.8"
+zone_dns2: "8.8.4.4"
+zone_internal_dns: "192.168.100.1"
+zone_network_type: "Basic"
+
+# Pod settings - All VMs (infrastructure, system, and guest) on same network
+pod_name: "pod1"
+pod_gateway: "192.168.100.1"
+pod_netmask: "255.255.255.0"
+pod_startip: "192.168.100.25"
+pod_endip: "192.168.100.99"
+
+# Guest network settings for Basic zone
+guest_network_name: "defaultGuestNetwork"
+guest_network_startip: "192.168.100.100"
+guest_network_endip: "192.168.100.254"
+guest_network_gateway: "192.168.100.1"
+guest_network_netmask: "255.255.255.0"
+
+# Cluster settings
+cluster_name: "cluster1"
+cluster_hypervisor: "KVM"
+
+# KVM hosts - Dynamically populated from inventory in configure-zone.yml
+# No need to hardcode here - uses groups['kvm_compute'] from inventory/hosts.yml
+# Password comes from kvm_host_root_password in secrets.yml
+
+# NFS server for storage
+nfs_server: "192.168.100.11"
+
+# Primary storage
+primary_storage_name: "primary-storage-1"
+
+# Secondary storage
+secondary_storage_name: "secondary-storage-1"
+
+# ============================================================================
+# Ansible Configuration
+# ============================================================================
+ansible_user: root
+ansible_python_interpreter: /usr/bin/python3

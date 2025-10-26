@@ -1,0 +1,240 @@
+---
+# Create nested VMs for CloudStack infrastructure
+
+# Install OS-specific packages
+- name: Include OS-specific tasks
+  include_tasks: "{{ ansible_os_family | lower }}.yml"
+
+- name: Verify nested virtualization is enabled
+  command: cat /sys/module/kvm_amd/parameters/nested
+  register: nested_virt
+  changed_when: false
+  failed_when: nested_virt.stdout != "1" and nested_virt.stdout != "Y"
+
+- name: Create libvirt network for CloudStack
+  community.libvirt.virt_net:
+    command: define
+    name: cloudstack-net
+    xml: |
+      <network>
+        <name>cloudstack-net</name>
+        <forward mode='nat'/>
+        <bridge name='csbr0' stp='on' delay='0'/>
+        <ip address='192.168.100.1' netmask='255.255.255.0'>
+          <dhcp>
+            <range start='192.168.100.100' end='192.168.100.254'/>
+            <host mac='52:54:00:00:00:10' name='cs-mgmt' ip='192.168.100.10'/>
+            <host mac='52:54:00:00:00:11' name='cs-nfs' ip='192.168.100.11'/>
+            <host mac='52:54:00:00:00:20' name='cs-kvm01' ip='192.168.100.20'/>
+            <host mac='52:54:00:00:00:21' name='cs-kvm02' ip='192.168.100.21'/>
+          </dhcp>
+        </ip>
+      </network>
+  register: net_defined
+
+- name: Start and autostart CloudStack network
+  community.libvirt.virt_net:
+    name: cloudstack-net
+    state: active
+    autostart: yes
+
+- name: Create VM disk directory
+  become: yes
+  file:
+    path: /var/lib/libvirt/images/cloudstack
+    state: directory
+    mode: '0755'
+
+- name: Download Rocky Linux 9 cloud image (if not exists)
+  become: yes
+  get_url:
+    url: "{{ vm_base_image_url }}"
+    dest: "/var/lib/libvirt/images/{{ vm_base_image_name }}"
+    mode: '0644'
+  register: cloud_image
+
+- name: Create cloud-init meta-data for each VM
+  become: yes
+  copy:
+    content: |
+      instance-id: {{ item.name }}
+      local-hostname: {{ item.name }}
+    dest: "/var/lib/libvirt/images/cloudstack/{{ item.name }}-meta-data"
+  loop:
+    - { name: 'cs-mgmt' }
+    - { name: 'cs-nfs' }
+    - { name: 'cs-kvm01' }
+    - { name: 'cs-kvm02' }
+
+- name: Create cloud-init user-data for each VM
+  become: yes
+  copy:
+    content: |
+      #cloud-config
+      hostname: {{ item.name }}
+      fqdn: {{ item.name }}.local
+      manage_etc_hosts: true
+      
+      users:
+        - name: root
+          lock_passwd: false
+          hashed_passwd: {{ vm_root_password_hash }}
+          ssh_authorized_keys:
+            - {{ admin_ssh_public_key }}
+ 
+      package_update: true
+      package_upgrade: true
+      
+      packages:
+        - qemu-guest-agent
+        - net-tools
+        - iproute
+        - vim
+      
+      runcmd:
+        - systemctl enable qemu-guest-agent
+        - systemctl start qemu-guest-agent
+    dest: "/var/lib/libvirt/images/cloudstack/{{ item.name }}-user-data"
+  loop:
+    - { name: 'cs-mgmt' }
+    - { name: 'cs-nfs' }
+    - { name: 'cs-kvm01' }
+    - { name: 'cs-kvm02' }
+
+- name: Create cloud-init ISO for each VM
+  become: yes
+  command: >
+    cloud-localds /var/lib/libvirt/images/cloudstack/{{ item.name }}-cidata.iso
+    /var/lib/libvirt/images/cloudstack/{{ item.name }}-user-data
+    /var/lib/libvirt/images/cloudstack/{{ item.name }}-meta-data
+  args:
+    creates: "/var/lib/libvirt/images/cloudstack/{{ item.name }}-cidata.iso"
+  loop:
+    - { name: 'cs-mgmt' }
+    - { name: 'cs-nfs' }
+    - { name: 'cs-kvm01' }
+    - { name: 'cs-kvm02' }
+
+- name: Create VM disks from cloud image
+  become: yes
+  command: >
+    qemu-img create -f qcow2 -F qcow2
+    -b /var/lib/libvirt/images/{{ vm_base_image_name }}
+    /var/lib/libvirt/images/cloudstack/{{ item.name }}.qcow2
+    {{ item.disk }}G
+  args:
+    creates: "/var/lib/libvirt/images/cloudstack/{{ item.name }}.qcow2"
+  loop:
+    - { name: 'cs-mgmt', disk: 50 }
+    - { name: 'cs-nfs', disk: 100 }
+    - { name: 'cs-kvm01', disk: 50 }
+    - { name: 'cs-kvm02', disk: 50 }
+
+- name: Create NVRAM directory for UEFI variables
+  become: yes
+  file:
+    path: /var/lib/libvirt/qemu/nvram
+    state: directory
+    mode: '0755'
+
+- name: Copy OVMF VARS for each VM
+  become: yes
+  copy:
+    src: /usr/share/OVMF/OVMF_VARS_4M.fd
+    dest: /var/lib/libvirt/qemu/nvram/{{ item.name }}_VARS.fd
+    remote_src: yes
+    force: no
+  loop:
+    - { name: 'cs-mgmt' }
+    - { name: 'cs-nfs' }
+    - { name: 'cs-kvm01' }
+    - { name: 'cs-kvm02' }
+
+- name: Define and create CloudStack VMs
+  community.libvirt.virt:
+    command: define
+    xml: |
+      <domain type='kvm'>
+        <name>{{ item.name }}</name>
+        <memory unit='MiB'>{{ item.ram }}</memory>
+        <vcpu placement='static'>{{ item.vcpu }}</vcpu>
+        <cpu mode='host-passthrough' check='none'>
+          <feature policy='require' name='svm'/>
+        </cpu>
+        <os>
+          <type arch='x86_64' machine='pc-q35-6.2'>hvm</type>
+          <loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE_4M.fd</loader>
+          <nvram>/var/lib/libvirt/qemu/nvram/{{ item.name }}_VARS.fd</nvram>
+          <boot dev='hd'/>
+        </os>
+        <features>
+          <acpi/>
+          <apic/>
+          <vmport state='off'/>
+        </features>
+        <clock offset='utc'>
+          <timer name='rtc' tickpolicy='catchup'/>
+          <timer name='pit' tickpolicy='delay'/>
+          <timer name='hpet' present='no'/>
+        </clock>
+        <on_poweroff>destroy</on_poweroff>
+        <on_reboot>restart</on_reboot>
+        <on_crash>restart</on_crash>
+        <devices>
+          <emulator>/usr/bin/qemu-system-x86_64</emulator>
+          <controller type='scsi' index='0' model='virtio-scsi'/>
+          <disk type='file' device='disk'>
+            <driver name='qemu' type='qcow2'/>
+            <source file='/var/lib/libvirt/images/cloudstack/{{ item.name }}.qcow2'/>
+            <target dev='vda' bus='virtio'/>
+          </disk>
+          <disk type='file' device='cdrom'>
+            <driver name='qemu' type='raw'/>
+            <source file='/var/lib/libvirt/images/cloudstack/{{ item.name }}-cidata.iso'/>
+            <target dev='sda' bus='scsi'/>
+            <readonly/>
+          </disk>
+          <interface type='network'>
+            <mac address='{{ item.mac }}'/>
+            <source network='cloudstack-net'/>
+            <model type='virtio'/>
+          </interface>
+          <console type='pty'>
+            <target type='serial' port='0'/>
+          </console>
+          <channel type='unix'>
+            <target type='virtio' name='org.qemu.guest_agent.0'/>
+          </channel>
+          <rng model='virtio'>
+            <backend model='random'>/dev/urandom</backend>
+          </rng>
+        </devices>
+      </domain>
+  loop:
+    - { name: 'cs-mgmt', ram: 4096, vcpu: 2, mac: '52:54:00:00:00:10' }
+    - { name: 'cs-nfs', ram: 2048, vcpu: 1, mac: '52:54:00:00:00:11' }
+    - { name: 'cs-kvm01', ram: 6144, vcpu: 4, mac: '52:54:00:00:00:20' }
+    - { name: 'cs-kvm02', ram: 6144, vcpu: 4, mac: '52:54:00:00:00:21' }
+
+- name: Start CloudStack VMs
+  community.libvirt.virt:
+    name: "{{ item }}"
+    state: running
+    autostart: yes
+  loop:
+    - cs-mgmt
+    - cs-nfs
+    - cs-kvm01
+    - cs-kvm02
+
+- name: Wait for VMs to be reachable via SSH
+  wait_for:
+    host: "{{ item }}"
+    port: 22
+    delay: 10
+    timeout: 300
+  loop:
+    - 192.168.100.10
+    - 192.168.100.11
+    - 192.168.100.20
+    - 192.168.100.21

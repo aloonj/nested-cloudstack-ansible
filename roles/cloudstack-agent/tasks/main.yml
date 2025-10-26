@@ -1,0 +1,66 @@
+---
+# Install and configure CloudStack KVM Agent on compute hosts
+
+- name: Verify nested virtualization is available
+  command: grep -c svm /proc/cpuinfo
+  register: svm_check
+  changed_when: false
+  failed_when: svm_check.stdout == "0"
+
+# Install packages, setup repos, configure network (OS-specific)
+- name: Include OS-specific tasks
+  include_tasks: "{{ ansible_os_family | lower }}.yml"
+
+- name: Configure libvirt for CloudStack
+  blockinfile:
+    path: /etc/libvirt/libvirtd.conf
+    block: |
+      listen_tls = 0
+      listen_tcp = 1
+      tcp_port = "16509"
+      auth_tcp = "none"
+      mdns_adv = 0
+    marker: "# {mark} ANSIBLE MANAGED CLOUDSTACK LIBVIRT CONFIG"
+  notify: restart libvirtd
+
+- name: Configure QEMU VNC settings
+  lineinfile:
+    path: /etc/libvirt/qemu.conf
+    regexp: '^#?vnc_listen\s*='
+    line: 'vnc_listen = "0.0.0.0"'
+  notify: restart libvirtd
+
+- name: Enable and start libvirtd
+  systemd:
+    name: libvirtd
+    state: started
+    enabled: yes
+
+- name: Flush handlers
+  meta: flush_handlers
+
+- name: Fetch management server cloud user SSH public key
+  slurp:
+    src: /var/cloudstack/management/.ssh/id_rsa.pub
+  register: cloud_ssh_key
+  delegate_to: "{{ groups['cloudstack_mgmt'][0] }}"
+
+- name: Add management server cloud user SSH key to root authorized_keys on hypervisor
+  authorized_key:
+    user: root
+    key: "{{ cloud_ssh_key.content | b64decode }}"
+    state: present
+    comment: "CloudStack Management Server - cloud user"
+
+- name: Configure CloudStack agent
+  template:
+    src: agent.properties.j2
+    dest: /etc/cloudstack/agent/agent.properties
+    backup: yes
+  notify: restart cloudstack-agent
+
+- name: Enable and start CloudStack agent
+  systemd:
+    name: cloudstack-agent
+    state: started
+    enabled: yes

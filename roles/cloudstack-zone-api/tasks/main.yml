@@ -1,0 +1,244 @@
+---
+# Configure CloudStack Zone via API using cloudmonkey (Basic Networking)
+
+- name: Include OS-specific cloudmonkey installation tasks
+  include_tasks: "{{ ansible_os_family | lower }}.yml"
+
+- name: Create cloudmonkey config directory
+  file:
+    path: "{{ ansible_env.HOME }}/.cloudmonkey"
+    state: directory
+    mode: '0700'
+
+- name: Configure cloudmonkey
+  template:
+    src: cloudmonkey_config.j2
+    dest: "{{ ansible_env.HOME }}/.cloudmonkey/config"
+    mode: '0600'
+
+- name: Sync cloudmonkey API cache
+  command: cloudmonkey sync
+  changed_when: false
+
+- name: Check if zone already exists
+  shell: cloudmonkey list zones name={{ zone_name }} filter=id | jq -r '.zone[0].id // empty'
+  register: zone_check
+  changed_when: false
+  failed_when: false
+
+- name: Create Basic zone
+  shell: |
+    cloudmonkey create zone \
+      name="{{ zone_name }}" \
+      dns1="{{ zone_dns1 }}" \
+      dns2="{{ zone_dns2 }}" \
+      internaldns1="{{ zone_internal_dns }}" \
+      networktype="Basic"
+  register: zone_create
+  when: zone_check.stdout == ''
+
+- name: Get zone ID after creation
+  shell: cloudmonkey list zones name={{ zone_name }} filter=id | jq -r '.zone[0].id'
+  register: zone_id_query
+  changed_when: false
+
+- name: Set zone ID fact
+  set_fact:
+    zone_id: "{{ zone_id_query.stdout | trim }}"
+
+- name: Create physical network for Basic zone
+  shell: cloudmonkey create physicalnetwork name="Physical Network 1" zoneid="{{ zone_id }}"
+  register: physnet_create
+  failed_when: false
+
+- name: Get physical network ID
+  shell: cloudmonkey list physicalnetworks zoneid={{ zone_id }} filter=id | jq -r '.physicalnetwork[0].id'
+  register: physnet_id_query
+  changed_when: false
+
+- name: Set physical network ID fact
+  set_fact:
+    physnet_id: "{{ physnet_id_query.stdout | trim }}"
+
+- name: Add Guest traffic type to physical network
+  shell: cloudmonkey add traffictype physicalnetworkid={{ physnet_id }} traffictype=Guest
+  failed_when: false
+
+- name: Add Management traffic type to physical network
+  shell: cloudmonkey add traffictype physicalnetworkid={{ physnet_id }} traffictype=Management
+  failed_when: false
+
+- name: Get VirtualRouter element ID
+  shell: cloudmonkey list virtualrouterelements nspid=$(cloudmonkey list networkserviceproviders name=VirtualRouter physicalnetworkid={{ physnet_id }} filter=id | jq -r '.networkserviceprovider[0].id') filter=id | jq -r '.virtualrouterelement[0].id'
+  register: vr_element_id_query
+  changed_when: false
+
+- name: Enable VirtualRouter element
+  shell: cloudmonkey configure virtualrouterelement id={{ vr_element_id_query.stdout }} enabled=true
+  failed_when: false
+
+- name: Get VirtualRouter provider ID
+  shell: cloudmonkey list networkserviceproviders name=VirtualRouter physicalnetworkid={{ physnet_id }} filter=id | jq -r '.networkserviceprovider[0].id'
+  register: vr_provider_id_query
+  changed_when: false
+
+- name: Enable VirtualRouter provider
+  shell: cloudmonkey update networkserviceprovider id={{ vr_provider_id_query.stdout }} state=Enabled
+  failed_when: false
+
+- name: Get SecurityGroupProvider ID
+  shell: cloudmonkey list networkserviceproviders name=SecurityGroupProvider physicalnetworkid={{ physnet_id }} filter=id | jq -r '.networkserviceprovider[0].id'
+  register: sgp_id_query
+  changed_when: false
+
+- name: Enable SecurityGroupProvider
+  shell: cloudmonkey update networkserviceprovider id={{ sgp_id_query.stdout }} state=Enabled
+  failed_when: false
+
+- name: Enable physical network
+  shell: cloudmonkey update physicalnetwork id={{ physnet_id }} state=Enabled
+  failed_when: false
+
+- name: Create pod
+  shell: |
+    cloudmonkey create pod \
+      name="{{ pod_name }}" \
+      zoneid="{{ zone_id }}" \
+      gateway="{{ pod_gateway }}" \
+      netmask="{{ pod_netmask }}" \
+      startip="{{ pod_startip }}" \
+      endip="{{ pod_endip }}"
+  register: pod_create
+  failed_when: false
+
+- name: Get pod ID
+  shell: cloudmonkey list pods name={{ pod_name }} filter=id | jq -r '.pod[0].id'
+  register: pod_id_query
+  changed_when: false
+
+- name: Set pod ID fact
+  set_fact:
+    pod_id: "{{ pod_id_query.stdout | trim }}"
+
+- name: Create cluster
+  shell: |
+    cloudmonkey add cluster \
+      clustername="{{ cluster_name }}" \
+      clustertype="CloudManaged" \
+      hypervisor="{{ cluster_hypervisor }}" \
+      zoneid="{{ zone_id }}" \
+      podid="{{ pod_id }}"
+  register: cluster_create
+  failed_when: false
+
+- name: Get cluster ID
+  shell: cloudmonkey list clusters name={{ cluster_name }} filter=id | jq -r '.cluster[0].id'
+  register: cluster_id_query
+  changed_when: false
+
+- name: Set cluster ID fact
+  set_fact:
+    cluster_id: "{{ cluster_id_query.stdout | trim }}"
+
+- name: Add KVM hosts to cluster (takes a while)
+  shell: |
+    cloudmonkey add host \
+      hypervisor="{{ cluster_hypervisor }}" \
+      url="http://{{ item.host }}" \
+      username="{{ item.username }}" \
+      password="{{ item.password }}" \
+      zoneid="{{ zone_id }}" \
+      podid="{{ pod_id }}" \
+      clusterid="{{ cluster_id }}"
+  loop: "{{ kvm_hosts }}"
+  register: add_hosts_result
+  failed_when:
+    - add_hosts_result.rc != 0
+    - "'already exists' not in add_hosts_result.stderr"
+  ignore_errors: yes
+
+- name: Wait for hosts to be added
+  pause:
+    seconds: 10
+
+- name: Add primary storage
+  shell: |
+    cloudmonkey create storagepool \
+      name="{{ primary_storage_name }}" \
+      url="nfs://{{ nfs_server }}{{ nfs_primary_path }}" \
+      zoneid="{{ zone_id }}" \
+      podid="{{ pod_id }}" \
+      clusterid="{{ cluster_id }}"
+  register: primary_storage_result
+  failed_when:
+    - primary_storage_result.rc != 0
+    - "'already exists' not in primary_storage_result.stderr"
+
+- name: Add secondary storage
+  shell: |
+    cloudmonkey add imagestore \
+      name="{{ secondary_storage_name }}" \
+      provider="NFS" \
+      url="nfs://{{ nfs_server }}{{ nfs_secondary_path }}" \
+      zoneid="{{ zone_id }}"
+  register: secondary_storage_result
+  failed_when:
+    - secondary_storage_result.rc != 0
+    - "'already exists' not in secondary_storage_result.stderr"
+
+- name: Enable the zone
+  shell: cloudmonkey update zone id={{ zone_id }} allocationstate=Enabled
+  register: enable_zone_result
+
+- name: Create guest network for Basic zone
+  shell: |
+    cloudmonkey create network \
+      name="{{ guest_network_name }}" \
+      displaytext="{{ guest_network_name }}" \
+      networkofferingid=$(cloudmonkey list networkofferings name="DefaultSharedNetworkOfferingWithSGService" state=Enabled filter=id | jq -r '.networkoffering[0].id') \
+      zoneid="{{ zone_id }}" \
+      physicalnetworkid="{{ physnet_id }}"
+  register: guest_network_result
+  failed_when:
+    - guest_network_result.rc != 0
+    - "'already exists' not in guest_network_result.stderr"
+
+- name: Get guest network ID
+  shell: cloudmonkey list networks name={{ guest_network_name }} zoneid={{ zone_id }} filter=id | jq -r '.network[0].id'
+  register: guest_network_id_query
+  changed_when: false
+
+- name: Set guest network ID fact
+  set_fact:
+    guest_network_id: "{{ guest_network_id_query.stdout | trim }}"
+
+- name: Add IP range to guest network
+  shell: |
+    cloudmonkey create vlaniprange \
+      zoneid="{{ zone_id }}" \
+      networkid="{{ guest_network_id }}" \
+      gateway="{{ guest_network_gateway }}" \
+      netmask="{{ guest_network_netmask }}" \
+      startip="{{ guest_network_startip }}" \
+      endip="{{ guest_network_endip }}" \
+      forvirtualnetwork=false
+  register: guest_iprange_result
+  failed_when:
+    - guest_iprange_result.rc != 0
+    - "'already exists' not in guest_iprange_result.stderr"
+    - "'overlaps' not in guest_iprange_result.stderr"
+
+- name: Display completion message
+  debug:
+    msg: |
+      ========================================
+      CloudStack Zone Configuration Complete!
+      ========================================
+
+      Zone "{{ zone_name }}" has been created and enabled.
+
+      System VM templates are now downloading (15-30 minutes).
+      Monitor progress at: http://{{ cloudstack_mgmt_host }}:8080/client
+
+      Once system VMs are running, you can launch guest VMs!
+      ========================================

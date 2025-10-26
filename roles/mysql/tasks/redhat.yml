@@ -1,0 +1,31 @@
+---
+# RedHat/Rocky specific tasks for mysql
+
+- name: Install MariaDB server
+  dnf:
+    name:
+      - mariadb-server
+      - mariadb
+      - python3-PyMySQL
+    state: present
+
+- name: Configure MariaDB for CloudStack
+  blockinfile:
+    path: /etc/my.cnf.d/cloudstack.cnf
+    create: yes
+    block: |
+      [mysqld]
+      # CloudStack specific settings
+      server-id=1
+      innodb_rollback_on_timeout=1
+      innodb_lock_wait_timeout=600
+      max_connections=350
+      log-bin=mysql-bin
+      binlog-format='ROW'
+      bind-address=0.0.0.0
+    marker: "# {mark} ANSIBLE MANAGED CLOUDSTACK MYSQL CONFIG"
+  notify: restart mariadb
+
+- name: Set MySQL socket path fact
+  set_fact:
+    mysql_socket: "/var/lib/mysql/mysql.sock"

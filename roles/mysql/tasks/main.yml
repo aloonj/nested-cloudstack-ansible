@@ -1,0 +1,72 @@
+---
+# Setup MySQL/MariaDB for CloudStack
+
+# Install MariaDB and configure (OS-specific)
+- name: Include OS-specific tasks
+  include_tasks: "{{ ansible_os_family | lower }}.yml"
+
+- name: Start and enable MariaDB
+  systemd:
+    name: mariadb
+    state: started
+    enabled: yes
+
+- name: Flush handlers to restart MariaDB with new config
+  meta: flush_handlers
+
+- name: Wait for MariaDB to be ready
+  wait_for:
+    path: "{{ mysql_socket }}"
+    timeout: 60
+
+- name: Set MySQL root password
+  mysql_user:
+    name: root
+    password: "{{ mysql_root_password }}"
+    login_unix_socket: "{{ mysql_socket }}"
+    host_all: yes
+    state: present
+
+- name: Create .my.cnf for root
+  template:
+    src: root-my.cnf.j2
+    dest: /root/.my.cnf
+    mode: '0600'
+
+- name: Remove anonymous MySQL users
+  mysql_user:
+    name: ''
+    host_all: yes
+    state: absent
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+
+- name: Remove MySQL test database
+  mysql_db:
+    name: test
+    state: absent
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+
+# Note: CloudStack database will be created by cloudstack-setup-databases
+# Do not pre-create it here as CloudStack 4.21+ requires full control over database initialization
+
+- name: Create cloud MySQL user for local access
+  mysql_user:
+    name: cloud
+    password: "{{ mysql_cloud_password }}"
+    priv: 'cloud.*:ALL'
+    host: localhost
+    state: present
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+
+- name: Create cloud MySQL user for remote access
+  mysql_user:
+    name: cloud
+    password: "{{ mysql_cloud_password }}"
+    priv: 'cloud.*:ALL'
+    host: '%'
+    state: present
+    login_user: root
+    login_password: "{{ mysql_root_password }}"

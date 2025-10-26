@@ -1,0 +1,19 @@
+---
+# RedHat/Rocky specific tasks for cloudstack-management
+
+- name: Add CloudStack YUM repository
+  yum_repository:
+    name: cloudstack
+    description: "Apache CloudStack {{ cloudstack_version }} Repository"
+    baseurl: "http://download.cloudstack.org/centos/$releasever/{{ cloudstack_version }}/"
+    gpgcheck: no
+    enabled: yes
+
+- name: Install CloudStack management server
+  dnf:
+    name:
+      - cloudstack-management
+      - cloudstack-common
+      - libvirt-client
+      - python3-libvirt
+    state: present

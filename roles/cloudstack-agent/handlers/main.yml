@@ -1,0 +1,10 @@
+---
+- name: restart libvirtd
+  systemd:
+    name: libvirtd
+    state: restarted
+
+- name: restart cloudstack-agent
+  systemd:
+    name: cloudstack-agent
+    state: restarted

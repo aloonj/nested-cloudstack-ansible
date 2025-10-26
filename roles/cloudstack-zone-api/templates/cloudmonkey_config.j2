@@ -1,0 +1,11 @@
+[core]
+profile = local
+asyncblock = true
+timeout = 3600
+output = json
+
+[local]
+url = http://{{ cloudstack_mgmt_host }}:8080/client/api
+apikey = {{ cloudstack_api_key }}
+secretkey = {{ cloudstack_secret_key }}
+timeout = 3600

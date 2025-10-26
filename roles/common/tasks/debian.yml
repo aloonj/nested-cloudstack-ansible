@@ -1,0 +1,49 @@
+---
+# Debian/Ubuntu specific tasks for common role
+
+- name: Update package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install common packages
+  apt:
+    name:
+      - ntp
+      - ntpdate
+      - vim
+      - htop
+      - net-tools
+      - bridge-utils
+      - curl
+      - wget
+      - ca-certificates
+      - gnupg
+      - lsb-release
+    state: present
+
+- name: Configure NTP
+  template:
+    src: ntp.conf.j2
+    dest: /etc/ntp.conf
+    backup: yes
+  notify: restart ntp
+
+- name: Start and enable NTP service
+  systemd:
+    name: ntp
+    state: started
+    enabled: yes
+
+- name: Check if AppArmor is installed
+  command: systemctl list-unit-files apparmor.service
+  register: apparmor_check
+  changed_when: false
+  failed_when: false
+
+- name: Disable AppArmor (CloudStack requirement)
+  systemd:
+    name: apparmor
+    state: stopped
+    enabled: no
+  when: apparmor_check.rc == 0

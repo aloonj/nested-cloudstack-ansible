@@ -1,0 +1,8 @@
+---
+- name: export nfs shares
+  command: exportfs -ra
+
+- name: restart nfs server
+  systemd:
+    name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
+    state: restarted
