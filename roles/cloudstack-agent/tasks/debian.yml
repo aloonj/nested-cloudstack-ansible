@@ -41,6 +41,11 @@
     create: yes
   notify: restart libvirtd
 
+- name: Get primary network interface name
+  shell: ip route | grep default | awk '{print $5}' | head -1
+  register: primary_interface
+  changed_when: false
+
 - name: Create directory for netplan config
   file:
     path: /etc/netplan
@@ -54,11 +59,11 @@
         version: 2
         renderer: networkd
         ethernets:
-          enp1s0:
+          {{ primary_interface.stdout }}:
             dhcp4: false
         bridges:
           cloudbr0:
-            interfaces: [enp1s0]
+            interfaces: [{{ primary_interface.stdout }}]
             dhcp4: true
             parameters:
               stp: false

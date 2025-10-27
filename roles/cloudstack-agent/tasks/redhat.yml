@@ -59,8 +59,13 @@
   command: nmcli con modify cloudbr0 ipv4.method auto
   ignore_errors: yes
 
-- name: Attach enp1s0 to cloudbr0 bridge
-  command: nmcli con add type bridge-slave ifname enp1s0 master cloudbr0
+- name: Get primary network interface name
+  shell: ip route | grep default | awk '{print $5}' | head -1
+  register: primary_interface
+  changed_when: false
+
+- name: Attach primary interface to cloudbr0 bridge
+  command: nmcli con add type bridge-slave ifname {{ primary_interface.stdout }} master cloudbr0
   register: bridge_slave
   failed_when:
     - bridge_slave.rc != 0

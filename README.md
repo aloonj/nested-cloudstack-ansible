@@ -69,7 +69,7 @@ All infrastructure and guest VMs share the **192.168.100.0/24** network:
 - **192.168.100.25-99** - Reserved for pod IPs (System VMs: SSVM, CPVM, Virtual Routers)
 - **192.168.100.100-254** - Guest VMs launched by CloudStack users
 
-The KVM compute hosts use `cloudbr0` bridge (attached to `enp1s0`) for CloudStack guest networking.
+The KVM compute hosts use `cloudbr0` bridge (automatically attached to the primary network interface) for CloudStack guest networking.
 
 ## Requirements
 
