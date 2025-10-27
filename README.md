@@ -20,10 +20,13 @@ Ansible playbook for deploying Apache CloudStack on nested VMs. Useful for testi
 cp inventory/group_vars/all/secrets.yml.example inventory/group_vars/all/secrets.yml
 vim inventory/group_vars/all/secrets.yml  # Set passwords and add your SSH public key
 
-# 2. Deploy infrastructure (30-60 minutes)
+# 2. Deploy infrastructure
 ansible-playbook -i inventory/hosts.yml deploy-cloudstack.yml --ask-become-pass
 
-# 3. Generate API keys in UI at http://192.168.100.10:8080/client (admin/password)
+# 3. Install CloudMonkey
+sudo snap install cloudmonkey  # Or: pip3 install cloudmonkey
+
+# 4. Generate API keys in UI at http://192.168.100.10:8080/client (admin/password)
 #    Add them to secrets.yml, then configure the zone
 ansible-playbook -i inventory/hosts.yml configure-zone.yml
 ```
@@ -115,9 +118,18 @@ ansible-galaxy collection install community.libvirt
 ansible-playbook -i inventory/hosts.yml deploy-cloudstack.yml --ask-become-pass
 ```
 
-Takes 30-60 minutes. Access UI at http://192.168.100.10:8080/client (admin/password)
+Access UI at http://192.168.100.10:8080/client (admin/password)
 
-4. **Generate API keys and configure zone automatically:**
+4. **Install CloudMonkey (required for zone configuration):**
+```bash
+# Ubuntu/Debian
+sudo snap install cloudmonkey
+
+# Or using pip
+pip3 install cloudmonkey
+```
+
+5. **Generate API keys and configure zone automatically:**
    - Login to CloudStack UI: http://192.168.100.10:8080/client (admin/password)
    - Navigate to: Accounts → admin → View Users → Click on admin user → Generate Keys
    - Copy the API Key and Secret Key
@@ -135,7 +147,7 @@ The zone configuration will automatically:
 - Create zone, pod, and cluster
 - Add KVM hosts (using SSH key authentication - automatically configured during deployment)
 - Configure primary and secondary storage
-- Enable the zone and trigger system VM template downloads (15-30 minutes)
+- Enable the zone and trigger system VM and guest OS template downloads
 
 **Note:** SSH key authentication is automatically set up during deployment. The management server's `cloud` user can connect to KVM hosts as `root` without a password.
 
