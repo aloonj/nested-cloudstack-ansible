@@ -29,6 +29,9 @@ sudo snap install cloudmonkey  # Or: pip3 install cloudmonkey
 # 4. Generate API keys in UI at http://192.168.100.10:8080/client (admin/password)
 #    Add them to secrets.yml, then configure the zone
 ansible-playbook -i inventory/hosts.yml configure-zone.yml
+
+# 5. (Optional) Register guest OS templates
+ansible-playbook -i inventory/hosts.yml register-templates.yml
 ```
 
 ## What This Does
@@ -136,6 +139,12 @@ Zone: zone1 (Basic Networking)
     └── NFS: 192.168.100.11:/export/secondary
         └── System VM Templates (auto-downloaded)
 ```
+
+**Optional: Register Guest OS Templates** (via `register-templates.yml`)
+- Registers Ubuntu 24.04 LTS template
+- Registers Rocky Linux 9 template
+- Templates download in background (can take 15-30 minutes depending on connection)
+- Users can then launch VMs from these templates
 
 ## Requirements
 

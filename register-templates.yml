@@ -1,0 +1,86 @@
+---
+# Optional playbook for registering guest OS templates in CloudStack
+# Run this AFTER configure-zone.yml completes successfully
+#
+# This registers Ubuntu 24.04 LTS and Rocky Linux 9 templates
+# Templates will download in the background (can take 15-30 minutes)
+
+- name: Register Guest OS Templates
+  hosts: localhost
+  gather_facts: no
+  become: no
+  vars:
+    cloudstack_mgmt_host: "{{ groups['cloudstack_mgmt'][0] }}"
+
+  tasks:
+    - name: Get zone ID
+      shell: cloudmonkey list zones name={{ zone_name }} filter=id | jq -r '.zone[0].id'
+      register: zone_id_query
+      changed_when: false
+
+    - name: Set zone ID fact
+      set_fact:
+        zone_id: "{{ zone_id_query.stdout | trim }}"
+
+    - name: Display zone ID
+      debug:
+        msg: "Zone ID: {{ zone_id }}"
+
+    - name: Register Ubuntu 24.04 LTS template
+      shell: |
+        cloudmonkey register template \
+          displaytext="Ubuntu 24.04 LTS" \
+          name="Ubuntu 24.04 LTS" \
+          ostypeid="5eebeeb3-b318-11f0-ac61-525400000010" \
+          url="https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img" \
+          zoneid="{{ zone_id }}" \
+          hypervisor="KVM" \
+          format="QCOW2" \
+          ispublic=true \
+          isfeatured=true \
+          passwordenabled=false
+      register: ubuntu_template_result
+      failed_when:
+        - ubuntu_template_result.rc != 0
+        - "'already exists' not in ubuntu_template_result.stderr"
+      ignore_errors: yes
+
+    - name: Display Ubuntu template result
+      debug:
+        var: ubuntu_template_result
+
+    - name: Register Rocky Linux 9 template
+      shell: |
+        cloudmonkey register template \
+          displaytext="Rocky Linux 9" \
+          name="Rocky Linux 9" \
+          ostypeid="5cacaf25-b318-11f0-ac61-525400000010" \
+          url="https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2" \
+          zoneid="{{ zone_id }}" \
+          hypervisor="KVM" \
+          format="QCOW2" \
+          ispublic=true \
+          isfeatured=true \
+          passwordenabled=false
+      register: rocky_template_result
+      failed_when:
+        - rocky_template_result.rc != 0
+        - "'already exists' not in rocky_template_result.stderr"
+      ignore_errors: yes
+
+    - name: Display Rocky template result
+      debug:
+        var: rocky_template_result
+
+    - name: Wait 5 seconds before checking templates
+      pause:
+        seconds: 5
+
+    - name: List registered templates
+      shell: cloudmonkey list templates templatefilter=all zoneid={{ zone_id }} | jq -r '.template[] | "\(.name) - \(.status)"'
+      register: templates_list
+      changed_when: false
+
+    - name: Display registered templates
+      debug:
+        msg: "{{ templates_list.stdout_lines }}"
