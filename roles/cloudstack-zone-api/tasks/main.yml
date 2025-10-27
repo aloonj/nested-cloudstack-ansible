@@ -120,6 +120,23 @@
   set_fact:
     pod_id: "{{ pod_id_query.stdout | trim }}"
 
+- name: Add pod IP range for system VMs (Basic zone requirement)
+  shell: |
+    cloudmonkey create vlaniprange \
+      zoneid="{{ zone_id }}" \
+      podid="{{ pod_id }}" \
+      gateway="{{ pod_gateway }}" \
+      netmask="{{ pod_netmask }}" \
+      startip="{{ pod_startip }}" \
+      endip="{{ pod_endip }}" \
+      forvirtualnetwork=false \
+      forsystemvms=true
+  register: pod_iprange_result
+  failed_when:
+    - pod_iprange_result.rc != 0
+    - "'already exists' not in pod_iprange_result.stderr"
+    - "'overlaps' not in pod_iprange_result.stderr"
+
 - name: Create cluster
   shell: |
     cloudmonkey add cluster \
