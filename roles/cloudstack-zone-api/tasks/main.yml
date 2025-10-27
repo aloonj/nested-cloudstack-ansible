@@ -120,23 +120,6 @@
   set_fact:
     pod_id: "{{ pod_id_query.stdout | trim }}"
 
-- name: Add pod IP range for system VMs (Basic zone requirement)
-  shell: |
-    cloudmonkey create vlaniprange \
-      zoneid="{{ zone_id }}" \
-      podid="{{ pod_id }}" \
-      gateway="{{ pod_gateway }}" \
-      netmask="{{ pod_netmask }}" \
-      startip="{{ pod_startip }}" \
-      endip="{{ pod_endip }}" \
-      forvirtualnetwork=false \
-      forsystemvms=true
-  register: pod_iprange_result
-  failed_when:
-    - pod_iprange_result.rc != 0
-    - "'already exists' not in pod_iprange_result.stderr"
-    - "'overlaps' not in pod_iprange_result.stderr"
-
 - name: Create cluster
   shell: |
     cloudmonkey add cluster \
@@ -173,10 +156,12 @@
     - add_hosts_result.rc != 0
     - "'already exists' not in add_hosts_result.stderr"
   ignore_errors: yes
+  when: skip_hosts_storage is not defined or not skip_hosts_storage
 
 - name: Wait for hosts to be added
   pause:
     seconds: 10
+  when: skip_hosts_storage is not defined or not skip_hosts_storage
 
 - name: Add primary storage
   shell: |
@@ -190,6 +175,7 @@
   failed_when:
     - primary_storage_result.rc != 0
     - "'already exists' not in primary_storage_result.stderr"
+  when: skip_hosts_storage is not defined or not skip_hosts_storage
 
 - name: Add secondary storage
   shell: |
@@ -202,6 +188,7 @@
   failed_when:
     - secondary_storage_result.rc != 0
     - "'already exists' not in secondary_storage_result.stderr"
+  when: skip_hosts_storage is not defined or not skip_hosts_storage
 
 - name: Create guest network for Basic zone (BEFORE enabling zone)
   shell: |
@@ -225,11 +212,12 @@
   set_fact:
     guest_network_id: "{{ guest_network_id_query.stdout | trim }}"
 
-- name: Add IP range to guest network
+- name: Add IP range to guest network (with podid - critical for system VMs)
   shell: |
     cloudmonkey create vlaniprange \
       zoneid="{{ zone_id }}" \
       networkid="{{ guest_network_id }}" \
+      podid="{{ pod_id }}" \
       gateway="{{ guest_network_gateway }}" \
       netmask="{{ guest_network_netmask }}" \
       startip="{{ guest_network_startip }}" \

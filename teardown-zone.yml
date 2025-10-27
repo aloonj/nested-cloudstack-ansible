@@ -1,0 +1,217 @@
+---
+# Teardown CloudStack Zone
+# This playbook removes a CloudStack zone and all associated resources in the correct order
+# Usage: ansible-playbook -i inventory/hosts.yml teardown-zone.yml
+
+- name: Teardown CloudStack Zone
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  become: no
+
+  tasks:
+    - name: Include main variables
+      include_vars: inventory/group_vars/all/main.yml
+
+    - name: Include secrets
+      include_vars: inventory/group_vars/all/secrets.yml
+
+    - name: Set CloudStack management host
+      set_fact:
+        cloudstack_mgmt_host: "cs-mgmt"
+
+    - name: Create cloudmonkey config directory
+      file:
+        path: "{{ ansible_env.HOME }}/.cloudmonkey"
+        state: directory
+        mode: '0700'
+
+    - name: Configure cloudmonkey
+      template:
+        src: roles/cloudstack-zone-api/templates/cloudmonkey_config.j2
+        dest: "{{ ansible_env.HOME }}/.cloudmonkey/config"
+        mode: '0600'
+
+    - name: Sync cloudmonkey API cache
+      command: cloudmonkey sync
+      changed_when: false
+
+    - name: Get zone ID
+      shell: cloudmonkey list zones name={{ zone_name }} filter=id | jq -r '.zone[0].id // empty'
+      register: zone_id_query
+      changed_when: false
+      failed_when: false
+
+    - name: Check if zone exists
+      set_fact:
+        zone_exists: "{{ zone_id_query.stdout != '' }}"
+        zone_id: "{{ zone_id_query.stdout | trim }}"
+
+    - name: Display message if zone doesn't exist
+      debug:
+        msg: "Zone '{{ zone_name }}' does not exist. Nothing to tear down."
+      when: not zone_exists
+
+    - name: Proceed with teardown
+      when: zone_exists
+      block:
+        - name: Step 1 - Disable the zone
+          shell: cloudmonkey update zone id={{ zone_id }} allocationstate=Disabled
+          register: disable_zone
+          failed_when: false
+
+        - name: Step 2 - Get secondary storage ID
+          shell: cloudmonkey list imagestores zoneid={{ zone_id }} | jq -r '.imagestore[0].id // empty'
+          register: secondary_storage_id
+          changed_when: false
+
+        - name: Step 2 - Mark templates as destroyed in DB
+          shell: |
+            ssh -o StrictHostKeyChecking=no root@{{ cloudstack_mgmt_host }} \
+            "mysql -u cloud -p{{ mysql_cloud_password }} cloud -e \"UPDATE template_store_ref SET download_state='ABANDONED', state='Destroyed', destroyed=1 WHERE store_id=(SELECT id FROM image_store WHERE uuid='{{ secondary_storage_id.stdout }}');\""
+          when: secondary_storage_id.stdout != ''
+          failed_when: false
+
+        - name: Step 2 - Remove secondary storage
+          shell: cloudmonkey delete imagestore id={{ secondary_storage_id.stdout }}
+          when: secondary_storage_id.stdout != ''
+          failed_when: false
+
+        - name: Step 3 - Get primary storage IDs
+          shell: cloudmonkey list storagepools zoneid={{ zone_id }} | jq -r '.storagepool[].id'
+          register: primary_storage_ids
+          changed_when: false
+          failed_when: false
+
+        - name: Step 3 - Enable primary storage (required before maintenance)
+          shell: cloudmonkey update storagepool id={{ item }} enabled=true
+          loop: "{{ primary_storage_ids.stdout_lines }}"
+          when: primary_storage_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 3 - Put primary storage in maintenance mode
+          shell: cloudmonkey enable storagemaintenance id={{ item }}
+          loop: "{{ primary_storage_ids.stdout_lines }}"
+          when: primary_storage_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 3 - Expunge any lingering volumes in DB
+          shell: |
+            ssh -o StrictHostKeyChecking=no root@{{ cloudstack_mgmt_host }} \
+            "mysql -u cloud -p{{ mysql_cloud_password }} cloud -e \"UPDATE volumes SET state='Expunged', removed=NOW() WHERE state='Destroy' AND removed IS NULL;\""
+          failed_when: false
+
+        - name: Step 3 - Delete primary storage
+          shell: cloudmonkey delete storagepool id={{ item }}
+          loop: "{{ primary_storage_ids.stdout_lines }}"
+          when: primary_storage_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 4 - Get host IDs
+          shell: cloudmonkey list hosts zoneid={{ zone_id }} | jq -r '.host[].id'
+          register: host_ids
+          changed_when: false
+          failed_when: false
+
+        - name: Step 4 - Disable hosts
+          shell: cloudmonkey update host id={{ item }} allocationstate=Disable
+          loop: "{{ host_ids.stdout_lines }}"
+          when: host_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 4 - Force delete hosts
+          shell: cloudmonkey delete host id={{ item }} forced=true
+          loop: "{{ host_ids.stdout_lines }}"
+          when: host_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 5 - Get cluster IDs
+          shell: cloudmonkey list clusters zoneid={{ zone_id }} | jq -r '.cluster[].id'
+          register: cluster_ids
+          changed_when: false
+          failed_when: false
+
+        - name: Step 5 - Delete clusters
+          shell: cloudmonkey delete cluster id={{ item }}
+          loop: "{{ cluster_ids.stdout_lines }}"
+          when: cluster_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 6 - Get pod IDs
+          shell: cloudmonkey list pods zoneid={{ zone_id }} | jq -r '.pod[].id'
+          register: pod_ids
+          changed_when: false
+          failed_when: false
+
+        - name: Step 6 - Delete pods
+          shell: cloudmonkey delete pod id={{ item }}
+          loop: "{{ pod_ids.stdout_lines }}"
+          when: pod_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 7 - Get system VM IDs
+          shell: cloudmonkey list systemvms zoneid={{ zone_id }} | jq -r '.systemvm[].id'
+          register: systemvm_ids
+          changed_when: false
+          failed_when: false
+
+        - name: Step 7 - Destroy system VMs
+          shell: cloudmonkey destroy systemvm id={{ item }}
+          loop: "{{ systemvm_ids.stdout_lines }}"
+          when: systemvm_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 8 - Get network IDs
+          shell: cloudmonkey list networks zoneid={{ zone_id }} | jq -r '.network[].id'
+          register: network_ids
+          changed_when: false
+          failed_when: false
+
+        - name: Step 8 - Get VLAN IP ranges for each network
+          shell: cloudmonkey list vlanipranges networkid={{ item }} | jq -r '.vlaniprange[].id'
+          loop: "{{ network_ids.stdout_lines }}"
+          when: network_ids.stdout_lines | length > 0
+          register: vlan_ipranges
+          changed_when: false
+          failed_when: false
+
+        - name: Step 8 - Delete VLAN IP ranges
+          shell: cloudmonkey delete vlaniprange id={{ item.1 }}
+          loop: "{{ vlan_ipranges.results | selectattr('stdout_lines', 'defined') | map(attribute='stdout_lines') | flatten }}"
+          when: vlan_ipranges.results is defined
+          failed_when: false
+
+        - name: Step 9 - Delete networks
+          shell: cloudmonkey delete network id={{ item }}
+          loop: "{{ network_ids.stdout_lines }}"
+          when: network_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 10 - Get physical network IDs
+          shell: cloudmonkey list physicalnetworks zoneid={{ zone_id }} | jq -r '.physicalnetwork[].id'
+          register: physnet_ids
+          changed_when: false
+          failed_when: false
+
+        - name: Step 10 - Delete physical networks
+          shell: cloudmonkey delete physicalnetwork id={{ item }}
+          loop: "{{ physnet_ids.stdout_lines }}"
+          when: physnet_ids.stdout_lines | length > 0
+          failed_when: false
+
+        - name: Step 11 - Delete zone
+          shell: cloudmonkey delete zone id={{ zone_id }}
+          register: delete_zone_result
+          failed_when: false
+
+        - name: Display teardown completion message
+          debug:
+            msg: |
+              ========================================
+              CloudStack Zone Teardown Complete!
+              ========================================
+              Zone "{{ zone_name }}" has been removed.
+
+              You can now re-run the setup playbook:
+              ansible-playbook -i inventory/hosts.yml playbook.yml
+              ========================================

@@ -105,14 +105,15 @@ zone_dns2: "8.8.4.4"
 zone_internal_dns: "192.168.100.1"
 zone_network_type: "Basic"
 
-# Pod settings - All VMs (infrastructure, system, and guest) on same network
+# Pod settings - Reserved system IPs (for management traffic and system VMs)
+# Note: Infrastructure hosts use .10, .11, .20 - avoid those IPs
 pod_name: "pod1"
 pod_gateway: "192.168.100.1"
 pod_netmask: "255.255.255.0"
-pod_startip: "192.168.100.25"
-pod_endip: "192.168.100.99"
+pod_startip: "192.168.100.21"
+pod_endip: "192.168.100.49"
 
-# Guest network settings for Basic zone
+# Guest network settings for Basic zone (for guest VMs only)
 guest_network_name: "defaultGuestNetwork"
 guest_network_startip: "192.168.100.100"
 guest_network_endip: "192.168.100.254"
