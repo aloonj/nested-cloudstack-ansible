@@ -71,6 +71,14 @@
     - bridge_slave.rc != 0
     - "'already exists' not in bridge_slave.stderr"
 
+- name: Bring down original interface connection
+  command: nmcli con down "System {{ primary_interface.stdout }}"
+  ignore_errors: yes
+
+- name: Bring up bridge-slave connection
+  command: nmcli con up bridge-slave-{{ primary_interface.stdout }}
+  ignore_errors: yes
+
 - name: Bring up cloudbr0 bridge
   command: nmcli con up cloudbr0
   ignore_errors: yes

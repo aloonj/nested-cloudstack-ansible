@@ -52,6 +52,16 @@
     state: directory
     mode: '0755'
 
+- name: Remove any existing netplan configs for primary interface
+  shell: |
+    for file in /etc/netplan/*.yaml /etc/netplan/*.yml; do
+      if [ -f "$file" ] && grep -q "{{ primary_interface.stdout }}:" "$file" 2>/dev/null; then
+        rm -f "$file"
+      fi
+    done
+  ignore_errors: yes
+  changed_when: false
+
 - name: Create CloudStack bridge interface with netplan
   copy:
     content: |
