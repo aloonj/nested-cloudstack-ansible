@@ -35,6 +35,53 @@ ansible-playbook -i inventory/hosts.yml configure-zone.yml
 
 Deploys a complete CloudStack environment on nested VMs in a single KVM host:
 
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Physical KVM Host (Ubuntu 22.04+ / Debian 11+)                              │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ csbr0 Bridge (192.168.100.1)                                        │    │
+│  │ NAT to external network                                             │    │
+│  └──────┬──────────┬──────────┬──────────┬──────────┬──────────────────┘    │
+│         │          │          │          │          │                       │
+│  ┌──────▼─────┐ ┌──▼──────┐ ┌─▼────────┐ ┌─▼────────┐                      │
+│  │  cs-mgmt   │ │ cs-nfs  │ │cs-kvm01  │ │cs-kvm02  │                      │
+│  │ .100.10    │ │ .100.11 │ │ .100.20  │ │ .100.21  │                      │
+│  │            │ │         │ │          │ │          │                      │
+│  │ CloudStack │ │   NFS   │ │cloudbr0  │ │cloudbr0  │  Nested VMs          │
+│  │  Manager   │ │ Primary │ │          │ │          │  (Rocky 9 or         │
+│  │  + MySQL   │ │Secondary│ │ KVM Agent│ │ KVM Agent│   Ubuntu 22/24)      │
+│  │            │ │ Storage │ │          │ │          │                      │
+│  │ Port 8080  │ │         │ │          │ │          │                      │
+│  └────────────┘ └─────────┘ └─────┬────┘ └────┬─────┘                      │
+│                                    │           │                            │
+│                        ┌───────────▼───────────▼────────────┐               │
+│                        │   CloudStack Managed VMs           │               │
+│                        │   (Created after zone config)      │               │
+│                        │                                    │               │
+│                        │  ┌──────────┐  ┌──────────┐       │               │
+│                        │  │ System   │  │ System   │       │               │
+│                        │  │ VMs      │  │ VMs      │       │               │
+│                        │  │ SSVM     │  │ CPVM     │       │               │
+│                        │  │ .100.25+ │  │ .100.25+ │       │               │
+│                        │  └──────────┘  └──────────┘       │               │
+│                        │                                    │               │
+│                        │  ┌──────────┐  ┌──────────┐       │               │
+│                        │  │ Guest    │  │ Guest    │       │               │
+│                        │  │ VMs      │  │ VMs      │       │               │
+│                        │  │.100.100+ │  │.100.100+ │       │               │
+│                        │  └──────────┘  └──────────┘       │               │
+│                        └────────────────────────────────────┘               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Network Layout (192.168.100.0/24):
+  • .1         - Gateway (csbr0 on physical host)
+  • .10-24     - Infrastructure VMs
+  • .25-99     - System VMs (SSVM, CPVM, Virtual Routers)
+  • .100-254   - Guest VMs (user-launched instances)
+```
+
 **Phase 1-2: Infrastructure Setup**
 - Creates 4 nested VMs with cloud-init configuration
   - `cs-mgmt` (192.168.100.10) - Management server + MySQL
