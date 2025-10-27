@@ -233,6 +233,60 @@
   shell: cloudmonkey update zone id={{ zone_id }} allocationstate=Enabled
   register: enable_zone_result
 
+- name: Register Ubuntu 24.04 template
+  shell: |
+    cloudmonkey register template \
+      displaytext="Ubuntu 24.04 x86_64" \
+      name="Ubuntu 24.04" \
+      ostypeid="b01e087a-b303-11f0-82f9-525400000010" \
+      url="https://download.cloudstack.org/templates/cloud-images/ubuntu/ubuntu-24.04-server-cloudimg-amd64.img" \
+      zoneid="{{ zone_id }}" \
+      hypervisor="KVM" \
+      format="RAW" \
+      ispublic=false \
+      passwordenabled=false \
+      sshkeyenabled=false
+  register: ubuntu_template
+  failed_when:
+    - ubuntu_template.rc != 0
+    - "'already exists' not in ubuntu_template.stderr"
+
+- name: Register Debian 12 template
+  shell: |
+    cloudmonkey register template \
+      displaytext="Debian GNU/Linux 12 (64-bit)" \
+      name="Debian GNU/Linux 12 (64-bit)" \
+      ostypeid="6bd35a1e-96e3-4889-b892-afa2abb5e7db" \
+      url="https://download.cloudstack.org/templates/cloud-images/debian/debian-12-genericcloud-amd64.qcow2" \
+      zoneid="{{ zone_id }}" \
+      hypervisor="KVM" \
+      format="QCOW2" \
+      ispublic=false \
+      passwordenabled=false \
+      sshkeyenabled=false
+  register: debian_template
+  failed_when:
+    - debian_template.rc != 0
+    - "'already exists' not in debian_template.stderr"
+
+- name: Register Rocky Linux 9 template
+  shell: |
+    cloudmonkey register template \
+      displaytext="Rocky Linux 9" \
+      name="Rocky Linux 9" \
+      ostypeid="add2d2b5-b303-11f0-82f9-525400000010" \
+      url="https://download.cloudstack.org/templates/cloud-images/rockylinux/Rocky-9-GenericCloud.latest.x86_64.qcow2" \
+      zoneid="{{ zone_id }}" \
+      hypervisor="KVM" \
+      format="QCOW2" \
+      ispublic=false \
+      passwordenabled=false \
+      sshkeyenabled=false
+  register: rocky_template
+  failed_when:
+    - rocky_template.rc != 0
+    - "'already exists' not in rocky_template.stderr"
+
 - name: Display completion message
   debug:
     msg: |
