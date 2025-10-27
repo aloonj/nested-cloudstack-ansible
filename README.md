@@ -111,6 +111,32 @@ Network Layout (192.168.100.0/24):
 - Enables the zone and downloads system VM templates
 - Creates ready-to-use CloudStack environment
 
+```
+CloudStack Logical Hierarchy (Created by configure-zone.yml):
+
+Zone: zone1 (Basic Networking)
+├── Physical Network: Physical Network 1
+│   ├── Traffic Types: Guest, Management
+│   ├── Network Service Providers:
+│   │   ├── VirtualRouter (Enabled)
+│   │   └── SecurityGroupProvider (Enabled)
+│   └── Guest Network: defaultGuestNetwork
+│       └── IP Range: 192.168.100.100-254
+│
+├── Pod: pod1
+│   ├── IP Range: 192.168.100.21-49 (System VMs)
+│   └── Cluster: cluster1 (KVM)
+│       ├── Hosts:
+│       │   ├── cs-kvm01 (192.168.100.20)
+│       │   └── cs-kvm02 (192.168.100.21)
+│       └── Primary Storage: primary-storage-1
+│           └── NFS: 192.168.100.11:/export/primary
+│
+└── Secondary Storage: secondary-storage-1
+    └── NFS: 192.168.100.11:/export/secondary
+        └── System VM Templates (auto-downloaded)
+```
+
 ## Requirements
 
 **Physical Host:**
