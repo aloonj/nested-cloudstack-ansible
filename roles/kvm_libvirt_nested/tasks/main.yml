@@ -12,6 +12,7 @@
   failed_when: nested_virt.stdout != "1" and nested_virt.stdout != "Y"
 
 - name: Create libvirt network for CloudStack
+  become: yes
   community.libvirt.virt_net:
     command: define
     name: cloudstack-net
@@ -33,6 +34,7 @@
   register: net_defined
 
 - name: Start and autostart CloudStack network
+  become: yes
   community.libvirt.virt_net:
     name: cloudstack-net
     state: active
